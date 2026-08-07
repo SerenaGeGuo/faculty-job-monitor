@@ -1,0 +1,46 @@
+faculty_titles:
+  - assistant professor
+  - tenure track
+  - tenure-track
+  - open rank
+  - faculty position
+
+primary_keywords:
+  - human-computer interaction
+  - human computer interaction
+  - HCI
+  - human-centered computing
+  - human centered computing
+  - interaction design
+  - information science
+  - information studies
+  - informatics
+  - human-robot interaction
+  - human robot interaction
+  - HRI
+  - spatial computing
+
+secondary_keywords:
+  - design
+  - industrial design
+  - architecture
+  - architectural design
+  - environmental design
+  - digital design
+  - computational design
+  - robotics
+  - augmented reality
+  - virtual reality
+  - mixed reality
+  - ubiquitous computing
+  - embodied interaction
+  - human-AI interaction
+  - human AI interaction
+
+exclude_titles:
+  - postdoctoral
+  - postdoc
+  - lecturer
+  - instructor
+  - adjunct
+  - visiting professor
