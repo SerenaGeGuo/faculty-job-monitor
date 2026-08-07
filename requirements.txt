@@ -1,0 +1,9 @@
+requests
+beautifulsoup4
+lxml
+feedparser
+pandas
+jinja2
+python-dotenv
+PyYAML
+rich
