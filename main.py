@@ -12,6 +12,10 @@ from job_monitor.scrapers.academic_jobs_online import (
 #    test_access,
 #)
 
+from job_monitor.scrapers.ischools import (
+    fetch_jobs as fetch_ischools_jobs,
+)
+
 from job_monitor.database.storage import (
     init_db,
     save_job,
@@ -322,7 +326,13 @@ def score_detailed_job(job, config=None):
                 f"description: {phrase}"
             )
 
-    if core_score >= 6:
+    core_threshold = (
+        3
+        if job.source == "iSchools"
+        else 6
+    )
+
+    if core_score >= core_threshold:
         return {
             "level": "CORE",
             "score": core_score,
@@ -491,6 +501,76 @@ def main():
         # Be reasonably polite to the website
         time.sleep(0.15)
 
+    # =========================================================
+    # iSchools
+    # =========================================================
+
+    print("\n" + "=" * 70)
+    print("Searching iSchools Jobs...")
+    print("=" * 70)
+
+    ischools_jobs = fetch_ischools_jobs(
+        max_pages=5,
+    )
+
+    print(
+        f"\nScanned {len(ischools_jobs)} "
+        f"iSchools jobs."
+    )
+
+    ischools_faculty_jobs = [
+        job
+        for job in ischools_jobs
+        if is_faculty_candidate(job)
+        and not is_senior_only(job)
+    ]
+
+    print(
+        f"Found {len(ischools_faculty_jobs)} "
+        f"iSchools faculty candidates "
+        f"before relevance filtering.\n"
+    )
+
+    for index, job in enumerate(
+        ischools_faculty_jobs,
+        start=1,
+    ):
+
+        print(
+            f"Evaluating iSchools "
+            f"{index}/{len(ischools_faculty_jobs)}: "
+            f"{job.title[:60]}"
+        )
+
+        # Details are already loaded by
+        # fetch_ischools_jobs(), so unlike AJO
+        # we do not call fetch_job_details() here.
+
+        if not is_job_open(job):
+            print("  Skipping: deadline passed")
+            continue
+
+        result = score_detailed_job(
+            job,
+            config,
+        )
+
+        if result:
+
+            is_new = save_job(
+                job,
+                result["level"],
+                result["score"],
+            )
+
+            result["is_new"] = is_new
+
+            matches.append(
+                (
+                    result,
+                    job,
+                )
+            )
 
     core_matches = [
     item
