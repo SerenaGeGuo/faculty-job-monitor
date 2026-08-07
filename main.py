@@ -126,6 +126,57 @@ def is_faculty_candidate(job):
 
     return any(term in title for term in faculty_terms)
 
+def is_senior_only(job):
+    """
+    Return True when a posting is clearly intended only for
+    senior faculty and does not include an entry-level rank.
+    """
+
+    title = job.title.lower()
+
+    # If the position explicitly allows an assistant-professor
+    # or open-rank applicant, keep it.
+    junior_or_open_signals = [
+        "assistant professor",
+        "assistant/associate professor",
+        "assistant or associate professor",
+        "assistant professorship",
+        "assistant professorships",
+        "open rank",
+        "open-rank",
+        "tenure-track faculty",
+        "tenure track faculty",
+        "faculty position",
+        "faculty positions",
+        "research fellow",
+    ]
+
+    if any(
+        term in title
+        for term in junior_or_open_signals
+    ):
+        return False
+
+    senior_only_terms = [
+        "full professor",
+        "associate professor",
+        "professor and head",
+        "professor and chair",
+        "department chair",
+        "department head",
+        "chair professor",
+        "endowed professor",
+        "endowed professorship",
+        "tenured professor",
+        "associate/full professor",
+        "associate or full professor",
+        "full professors",
+    ]
+
+    return any(
+        term in title
+        for term in senior_only_terms
+    )
 
 def contains_phrase(text, phrase):
     """
@@ -138,8 +189,20 @@ def contains_phrase(text, phrase):
 
 def score_detailed_job(job, config=None):
     """
-    Score faculty jobs for relevance to HCI, Information Science,
-    HRI, Design, Architecture, and related areas.
+    Classify a faculty job into:
+
+    CORE:
+        Explicit HCI, HRI, Information Science, Human-AI,
+        Interaction Design, Human-Centered Computing, etc.
+
+    BROAD:
+        General CS, Information, Design, Architecture, or
+        related departments where an HCI/design researcher
+        could reasonably apply.
+
+    ADJACENT:
+        Robotics, XR, visualization, AI, cognitive science,
+        digital media, etc.
     """
 
     title = job.title.lower()
@@ -148,7 +211,7 @@ def score_detailed_job(job, config=None):
     description = job.description.lower()
 
     # ---------------------------------------------------------
-    # Strong research-area phrases
+    # CORE: direct intellectual fit
     # ---------------------------------------------------------
 
     core_phrases = [
@@ -163,154 +226,196 @@ def score_detailed_job(job, config=None):
         "interaction design",
         "interactive systems",
         "user experience",
-        "ubiquitous computing",
-        "spatial computing",
-        "embodied interaction",
+        "interface design",
         "social computing",
+        "ubiquitous computing",
+        "embodied interaction",
+        "tangible interaction",
         "computer-supported cooperative work",
         "computer supported cooperative work",
-    ]
-
-    # ---------------------------------------------------------
-    # Relevant disciplinary areas
-    # ---------------------------------------------------------
-
-    related_phrases = [
-        "information science",
-        "information studies",
+        "spatial computing",
         "human centered design",
         "human-centered design",
+    ]
+
+    # ---------------------------------------------------------
+    # BROAD: departments / disciplines worth applying to
+    # ---------------------------------------------------------
+
+    broad_phrases = [
+        "computer science",
+        "information science",
+        "information studies",
+        "informatics",
         "industrial design",
         "product design",
-        "experience design",
-        "interface design",
         "computational design",
         "architectural design",
+        "architecture",
         "environmental design",
-        "digital design",
         "design technology",
-        "mixed reality",
+        "digital design",
+        "interaction media",
+        "computational media",
+    ]
+
+    # ---------------------------------------------------------
+    # ADJACENT: potentially relevant research neighborhoods
+    # ---------------------------------------------------------
+
+    adjacent_phrases = [
+        "robotics",
         "augmented reality",
         "virtual reality",
-        "tangible interaction",
-        "wearable computing",
-    ]
-
-    # ---------------------------------------------------------
-    # Terms that are useful but too broad to establish relevance
-    # by themselves
-    # ---------------------------------------------------------
-
-    supporting_phrases = [
-        "robotics",
-        "artificial intelligence",
-        "machine learning",
-        "computer science",
-        "cognitive science",
+        "mixed reality",
+        "extended reality",
         "visualization",
-        "interactive",
+        "computer graphics",
+        "cognitive science",
+        "artificial intelligence",
+        "digital media",
+        "interactive media",
+        "wearable computing",
+        "internet of things",
     ]
 
-    score = 0
-    matches = []
+    # ---------------------------------------------------------
+    # 1. Look for CORE evidence
+    # ---------------------------------------------------------
 
-    # Title is strongest evidence
+    core_evidence = []
+    core_score = 0
+
+    # Title
     for phrase in core_phrases:
         if contains_phrase(title, phrase):
-            score += 10
-            matches.append(f"title: {phrase}")
+            core_score += 10
+            core_evidence.append(
+                f"title: {phrase}"
+            )
 
-    for phrase in related_phrases:
-        if contains_phrase(title, phrase):
-            score += 7
-            matches.append(f"title: {phrase}")
-
-    # Department / organization
+    # Organization / department
     for phrase in core_phrases:
         if contains_phrase(organization, phrase):
-            score += 8
-            matches.append(f"department: {phrase}")
-
-    for phrase in related_phrases:
-        if contains_phrase(organization, phrase):
-            score += 5
-            matches.append(f"department: {phrase}")
+            core_score += 8
+            core_evidence.append(
+                f"department: {phrase}"
+            )
 
     # Subject areas
     for phrase in core_phrases:
         if contains_phrase(subjects, phrase):
-            score += 8
-            matches.append(f"subject: {phrase}")
+            core_score += 8
+            core_evidence.append(
+                f"subject: {phrase}"
+            )
 
-    for phrase in related_phrases:
-        if contains_phrase(subjects, phrase):
-            score += 5
-            matches.append(f"subject: {phrase}")
-
-    # Description provides weaker evidence
+    # Description is weaker evidence
     for phrase in core_phrases:
         if contains_phrase(description, phrase):
-            score += 4
-            matches.append(f"description: {phrase}")
+            core_score += 3
+            core_evidence.append(
+                f"description: {phrase}"
+            )
 
-    for phrase in related_phrases:
-        if contains_phrase(description, phrase):
-            score += 2
-            matches.append(f"description: {phrase}")
-
-    # Supporting terms should never create a strong match alone
-    supporting_matches = []
-
-    combined = " ".join([
-        title,
-        organization,
-        subjects,
-        description,
-    ])
-
-    for phrase in supporting_phrases:
-        if contains_phrase(combined, phrase):
-            supporting_matches.append(phrase)
+    if core_score >= 6:
+        return {
+            "level": "CORE",
+            "score": core_score,
+            "matches": core_evidence,
+            "supporting": [],
+        }
 
     # ---------------------------------------------------------
-    # Explicit false-positive corrections
+    # 2. Look for BROAD disciplinary fit
+    #
+    # IMPORTANT:
+    # We intentionally do NOT use the description here.
+    # Otherwise phrases such as "research design" or
+    # "computer architecture" create many false positives.
     # ---------------------------------------------------------
 
-    false_positive_phrases = [
-        "quantum information science",
-        "quantum information",
-        "bioinformatics",
-        "medical informatics",
-        "health informatics",
-        "computer architecture",
-        "experimental design",
-        "research design",
-        "study design",
+    broad_evidence = []
+    broad_score = 0
+
+    broad_fields = [
+        ("title", title, 7),
+        ("department", organization, 6),
+        ("subject", subjects, 5),
     ]
 
-    for phrase in false_positive_phrases:
-        if contains_phrase(combined, phrase):
-            score -= 2
+    for field_name, field_text, weight in broad_fields:
+
+        for phrase in broad_phrases:
+
+            if not contains_phrase(
+                field_text,
+                phrase,
+            ):
+                continue
+
+            # Prevent Quantum Information Science
+            # from becoming an Information Science match.
+            if (
+                phrase == "information science"
+                and contains_phrase(
+                    field_text,
+                    "quantum information science",
+                )
+            ):
+                continue
+
+            broad_score += weight
+
+            broad_evidence.append(
+                f"{field_name}: {phrase}"
+            )
+
+    if broad_score >= 5:
+        return {
+            "level": "BROAD",
+            "score": broad_score,
+            "matches": broad_evidence,
+            "supporting": [],
+        }
 
     # ---------------------------------------------------------
-    # Classification
+    # 3. Look for ADJACENT areas
     # ---------------------------------------------------------
 
-    if score >= 8:
-        level = "STRONG"
+    adjacent_evidence = []
+    adjacent_score = 0
 
-    elif score >= 4:
-        level = "POSSIBLE"
+    adjacent_fields = [
+        ("title", title, 5),
+        ("department", organization, 4),
+        ("subject", subjects, 4),
+        ("description", description, 1),
+    ]
 
-    else:
-        return None
+    for field_name, field_text, weight in adjacent_fields:
 
-    return {
-        "level": level,
-        "score": score,
-        "matches": matches,
-        "supporting": supporting_matches,
-    }
+        for phrase in adjacent_phrases:
+
+            if contains_phrase(
+                field_text,
+                phrase,
+            ):
+                adjacent_score += weight
+
+                adjacent_evidence.append(
+                    f"{field_name}: {phrase}"
+                )
+
+    if adjacent_score >= 4:
+        return {
+            "level": "ADJACENT",
+            "score": adjacent_score,
+            "matches": adjacent_evidence,
+            "supporting": [],
+        }
+
+    return None
 
 
 def main():
@@ -326,8 +431,10 @@ def main():
     print(f"\nScanned {len(jobs)} jobs.")
 
     faculty_jobs = [
-        job for job in jobs
+        job
+        for job in jobs
         if is_faculty_candidate(job)
+        and not is_senior_only(job)
     ]
 
     print(
@@ -380,16 +487,23 @@ def main():
         # Be reasonably polite to the website
         time.sleep(0.15)
 
-    strong_matches = [
-        item
-        for item in matches
-        if item[0]["level"] == "STRONG"
+
+    core_matches = [
+    item
+    for item in matches
+    if item[0]["level"] == "CORE"
     ]
 
-    possible_matches = [
+    broad_matches = [
         item
         for item in matches
-        if item[0]["level"] == "POSSIBLE"
+        if item[0]["level"] == "BROAD"
+    ]
+
+    adjacent_matches = [
+        item
+        for item in matches
+        if item[0]["level"] == "ADJACENT"
     ]
 
     new_matches = [
@@ -408,67 +522,151 @@ def main():
     )
 
     print(
-        f"\nStrong matches: {len(strong_matches)}"
+        f"\nCORE matches: {len(core_matches)}"
     )
 
-    for result, job in strong_matches:
 
-        status = "NEW" if result["is_new"] else "SEEN"
+    for result, job in core_matches:
+
+        status = (
+            "NEW"
+            if result["is_new"]
+            else "SEEN"
+        )
 
         print("\n" + "-" * 70)
-        print(
-            f"[STRONG] [{status}] {job.title}"
-        )
-        print(f"Organization: {job.organization}")
-        print(f"Subject areas: {job.subject_areas}")
-        print(f"Deadline: {job.deadline}")
-
-        print(f"Relevance score: {result['score']}")
 
         print(
-            "Evidence:",
-             ", ".join(result["matches"])
+            f"[CORE] [{status}] {job.title}"
         )
 
-        if result["supporting"]:
-            print(
-                "Supporting areas:",
-                 ", ".join(result["supporting"])
-            )
-
-        print(f"URL: {job.url}")
-
-    print(
-        f"\n\nPossible matches: "
-        f"{len(possible_matches)}"
-    )
-
-    for result, job in possible_matches:
-
-        status = "NEW" if result["is_new"] else "SEEN"
-
-        print("\n" + "-" * 70)
         print(
-            f"[POSSIBLE] [{status}] {job.title}"
+            f"Organization: "
+            f"{job.organization}"
         )
-        print(f"Organization: {job.organization}")
-        print(f"Subject areas: {job.subject_areas}")
-        print(f"Deadline: {job.deadline}")
 
-        print(f"Relevance score: {result['score']}")
+        print(
+            f"Subject areas: "
+            f"{job.subject_areas}"
+        )
+
+        print(
+            f"Deadline: "
+            f"{job.deadline}"
+        )
+
+        print(
+            f"Relevance score: "
+            f"{result['score']}"
+        )
 
         print(
             "Evidence:",
             ", ".join(result["matches"])
         )
 
-        if result["supporting"]:
-            print(
-             "Supporting areas:",
-              ", ".join(result["supporting"])
-             )
+        print(
+            f"URL: {job.url}"
+        )
 
-        print(f"URL: {job.url}")
+
+    print(
+        f"\n\nBROAD matches: "
+        f"{len(broad_matches)}"
+    )
+
+    for result, job in broad_matches:
+
+        status = (
+            "NEW"
+            if result["is_new"]
+            else "SEEN"
+        )
+
+        print("\n" + "-" * 70)
+
+        print(
+            f"[BROAD] [{status}] {job.title}"
+        )
+
+        print(
+            f"Organization: "
+            f"{job.organization}"
+        )
+
+        print(
+            f"Subject areas: "
+            f"{job.subject_areas}"
+        )
+
+        print(
+            f"Deadline: "
+            f"{job.deadline}"
+        )
+
+        print(
+            f"Relevance score: "
+            f"{result['score']}"
+        )
+
+        print(
+            "Evidence:",
+            ", ".join(result["matches"])
+        )
+
+        print(
+            f"URL: {job.url}"
+        )
+
+
+    print(
+        f"\n\nADJACENT matches: "
+        f"{len(adjacent_matches)}"
+    )
+
+    for result, job in adjacent_matches:
+
+        status = (
+            "NEW"
+            if result["is_new"]
+            else "SEEN"
+        )
+
+        print("\n" + "-" * 70)
+
+        print(
+            f"[ADJACENT] [{status}] "
+            f"{job.title}"
+        )
+
+        print(
+            f"Organization: "
+            f"{job.organization}"
+        )
+
+        print(
+            f"Subject areas: "
+            f"{job.subject_areas}"
+        )
+
+        print(
+            f"Deadline: "
+            f"{job.deadline}"
+        )
+
+        print(
+            f"Relevance score: "
+            f"{result['score']}"
+        )
+
+        print(
+            "Evidence:",
+            ", ".join(result["matches"])
+        )
+
+        print(
+            f"URL: {job.url}"
+        )
 
 
 if __name__ == "__main__":
