@@ -3,14 +3,15 @@ import time
 import re
 from datetime import datetime
 
-
-
-
 from job_monitor.scrapers.academic_jobs_online import (
     fetch_jobs,
     fetch_job_details,
 )
 
+from job_monitor.database.storage import (
+    init_db,
+    save_job,
+)
 
 def load_config():
     with open("config/search.yaml", "r", encoding="utf-8") as file:
@@ -313,6 +314,9 @@ def score_detailed_job(job, config=None):
 
 
 def main():
+
+    init_db()
+
     config = load_config()
 
     print("Searching AcademicJobsOnline...")
@@ -349,13 +353,23 @@ def main():
 
         if not is_job_open(job):
             continue
-        
+
         result = score_detailed_job(
             job,
             config,
         )
 
+
         if result:
+
+            is_new = save_job(
+                job,
+                result["level"],
+                result["score"],
+            )
+
+            result["is_new"] = is_new
+
             matches.append(
                 (
                     result,
@@ -378,9 +392,20 @@ def main():
         if item[0]["level"] == "POSSIBLE"
     ]
 
+    new_matches = [
+    item
+    for item in matches
+    if item[0]["is_new"]
+    ]
+
     print("\n" + "=" * 70)
     print("SEARCH COMPLETE")
     print("=" * 70)
+
+    print(
+        f"\nNew jobs since last run: "
+        f"{len(new_matches)}"
+    )
 
     print(
         f"\nStrong matches: {len(strong_matches)}"
@@ -388,8 +413,12 @@ def main():
 
     for result, job in strong_matches:
 
+        status = "NEW" if result["is_new"] else "SEEN"
+
         print("\n" + "-" * 70)
-        print(f"[STRONG] {job.title}")
+        print(
+            f"[STRONG] [{status}] {job.title}"
+        )
         print(f"Organization: {job.organization}")
         print(f"Subject areas: {job.subject_areas}")
         print(f"Deadline: {job.deadline}")
@@ -416,8 +445,12 @@ def main():
 
     for result, job in possible_matches:
 
+        status = "NEW" if result["is_new"] else "SEEN"
+
         print("\n" + "-" * 70)
-        print(f"[POSSIBLE] {job.title}")
+        print(
+            f"[POSSIBLE] [{status}] {job.title}"
+        )
         print(f"Organization: {job.organization}")
         print(f"Subject areas: {job.subject_areas}")
         print(f"Deadline: {job.deadline}")
