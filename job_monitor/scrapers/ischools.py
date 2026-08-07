@@ -268,6 +268,129 @@ def normalize_deadline(deadline):
     # keep the original text rather than losing it.
     return text
 
+def extract_organization(
+    description,
+    page_text,
+):
+    """
+    Extract the university or institution name from
+    an iSchools job post.
+    """
+
+    lines = [
+        line.strip()
+        for line in page_text.splitlines()
+        if line.strip()
+    ]
+
+    # ---------------------------------------------------------
+    # Strategy 1:
+    # Some iSchools pages put the institution directly
+    # above "Application Deadline".
+    # ---------------------------------------------------------
+
+    for index, line in enumerate(lines):
+
+        if not line.lower().startswith(
+            "application deadline:"
+        ):
+            continue
+
+        if index == 0:
+            break
+
+        candidate = lines[index - 1]
+
+        candidate_lower = candidate.lower()
+
+        institution_terms = [
+            "university",
+            "college",
+            "institute",
+        ]
+
+        if (
+            any(
+                term in candidate_lower
+                for term in institution_terms
+            )
+            and len(candidate) < 150
+        ):
+            return candidate
+
+        break
+
+    # ---------------------------------------------------------
+    # Strategy 2:
+    # Look in the beginning of the actual job description.
+    #
+    # Examples:
+    # "at San José State University"
+    # "at the University of Oklahoma"
+    # "at University of Wisconsin-Madison"
+    # ---------------------------------------------------------
+
+    preview = description[:1500]
+
+    patterns = [
+        (
+            r"\bat (?:the )?"
+            r"((?:University|College|Institute) "
+            r"of [A-Z][A-Za-zÀ-ÿ0-9&.'’\-, ]+?)"
+            r"(?=\s*(?:\(|is|invites|seeks|,|\n))"
+        ),
+        (
+            r"\bat (?:the )?"
+            r"([A-Z][A-Za-zÀ-ÿ0-9&.'’\-, ]+?"
+            r"(?:University|College|Institute))"
+            r"(?=\s*(?:\(|is|invites|seeks|,|\n))"
+        ),
+    ]
+
+    for pattern in patterns:
+
+        match = re.search(
+            pattern,
+            preview,
+        )
+
+        if match:
+            return (
+                match.group(1)
+                .strip(" ,.")
+            )
+
+    # ---------------------------------------------------------
+    # Strategy 3:
+    # Some descriptions begin directly with the institution.
+    #
+    # Example:
+    # "Western University invites applications..."
+    # ---------------------------------------------------------
+
+    first_line = (
+        description.splitlines()[0]
+        if description
+        else ""
+    )
+
+    match = re.match(
+        r"^("
+        r"[A-Z][A-Za-zÀ-ÿ0-9&.'’\-, ]+?"
+        r"(?:University|College|Institute)"
+        r")\b",
+        first_line,
+    )
+
+    if match:
+        return (
+            match.group(1)
+            .strip(" ,.")
+        )
+
+    return ""
+
+
 def fetch_post_details(
     post,
     timeout: int = 30,
@@ -372,8 +495,14 @@ def fetch_post_details(
     page_text
     )   
 
+    organization = extract_organization(
+        description,
+        page_text,
+    )
+
     return {
         "title": title,
+        "organization": organization,
         "url": url,
         "deadline": deadline,
         "external_url": external_url,
@@ -434,7 +563,7 @@ def fetch_jobs(
 
         job = Job(
             title=details["title"],
-            organization="",
+            organization=details["organization"],
             url=job_url,
             subject_areas="",
             description=details["description"],
