@@ -8,6 +8,10 @@ from job_monitor.scrapers.academic_jobs_online import (
     fetch_job_details,
 )
 
+#from job_monitor.scrapers.higher_ed_jobs import (
+#    test_access,
+#)
+
 from job_monitor.database.storage import (
     init_db,
     save_job,
