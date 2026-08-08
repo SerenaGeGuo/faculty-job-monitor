@@ -16,6 +16,10 @@ from job_monitor.scrapers.ischools import (
     fetch_jobs as fetch_ischools_jobs,
 )
 
+from job_monitor.scrapers.cra import (
+    fetch_jobs as fetch_cra_jobs,
+)
+
 from job_monitor.database.storage import (
     init_db,
     save_job,
@@ -571,6 +575,70 @@ def main():
                     job,
                 )
             )
+
+
+    # =========================================================
+    # CRA Career Center
+    # =========================================================
+
+    print("\n" + "=" * 70)
+    print("Searching CRA Career Center...")
+    print("=" * 70)
+
+    cra_jobs = fetch_cra_jobs()
+
+    print(
+        f"\nScanned {len(cra_jobs)} "
+        f"CRA jobs."
+    )
+
+    cra_faculty_jobs = [
+        job
+        for job in cra_jobs
+        if is_faculty_candidate(job)
+        and not is_senior_only(job)
+    ]
+
+    print(
+        f"Found {len(cra_faculty_jobs)} "
+        f"CRA faculty candidates "
+        f"before relevance filtering.\n"
+    )
+
+    for index, job in enumerate(
+        cra_faculty_jobs,
+        start=1,
+    ):
+
+        print(
+            f"Evaluating CRA "
+            f"{index}/{len(cra_faculty_jobs)}: "
+            f"{job.title[:60]}"
+        )
+
+        result = score_detailed_job(
+            job,
+            config,
+        )
+
+        if result:
+
+            is_new = save_job(
+                job,
+                result["level"],
+                result["score"],
+            )
+
+            result["is_new"] = is_new
+
+            matches.append(
+                (
+                    result,
+                    job,
+                )
+            )
+
+    
 
     core_matches = [
     item
