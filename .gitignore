@@ -2,6 +2,5 @@
 __pycache__/
 *.pyc
 .env
-jobs.db
 reports/
 .vscode/

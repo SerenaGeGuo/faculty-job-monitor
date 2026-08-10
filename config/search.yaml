@@ -44,3 +44,19 @@ exclude_titles:
   - instructor
   - adjunct
   - visiting professor
+
+research_scientist_titles:
+  - research scientist
+  - research engineer
+  - senior researcher
+  - staff research scientist
+  - applied scientist
+  - principal researcher
+
+research_scientist_exclude_titles:
+  - intern
+  - internship
+  - postdoctoral
+  - postdoc
+  - phd
+  - co-op

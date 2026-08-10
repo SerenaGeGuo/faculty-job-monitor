@@ -1,6 +1,9 @@
+import csv
 import yaml
 import time
 import re
+
+from pathlib import Path
 from datetime import datetime
 
 from job_monitor.scrapers.academic_jobs_online import (
@@ -11,6 +14,8 @@ from job_monitor.scrapers.academic_jobs_online import (
 #from job_monitor.scrapers.higher_ed_jobs import (
 #    test_access,
 #)
+# HigherEdJobs blocks automated access (Incapsula security check).
+# Kept as a discovery-only reference; not part of the automated run.
 
 from job_monitor.scrapers.ischools import (
     fetch_jobs as fetch_ischools_jobs,
@@ -18,6 +23,18 @@ from job_monitor.scrapers.ischools import (
 
 from job_monitor.scrapers.cra import (
     fetch_jobs as fetch_cra_jobs,
+)
+
+from job_monitor.scrapers.design_sources import (
+    fetch_jobs as fetch_design_jobs,
+)
+
+from job_monitor.scrapers.university_pages import (
+    fetch_jobs as fetch_university_jobs,
+)
+
+from job_monitor.scrapers.industry_sources import (
+    fetch_jobs as fetch_industry_jobs,
 )
 
 from job_monitor.database.storage import (
@@ -189,6 +206,25 @@ def is_senior_only(job):
         term in title
         for term in senior_only_terms
     )
+
+def is_research_scientist_candidate(job, config):
+    """
+    Return True when a job looks like an industry Research
+    Scientist / Research Engineer opening (as opposed to an
+    internship or postdoctoral position).
+    """
+
+    if contains_any(
+        job.title,
+        config["research_scientist_exclude_titles"],
+    ):
+        return False
+
+    return contains_any(
+        job.title,
+        config["research_scientist_titles"],
+    )
+
 
 def contains_phrase(text, phrase):
     """
@@ -435,6 +471,207 @@ def score_detailed_job(job, config=None):
 
     return None
 
+def export_results(matches):
+    """
+    Save matched jobs from the current run to a CSV report.
+    """
+
+    reports_dir = Path("reports")
+
+    reports_dir.mkdir(
+        exist_ok=True,
+    )
+
+    timestamp = datetime.now().strftime(
+        "%Y%m%d_%H%M"
+    )
+
+    report_path = (
+        reports_dir
+        / f"jobs_{timestamp}.csv"
+    )
+
+    with report_path.open(
+        "w",
+        newline="",
+        encoding="utf-8-sig",
+    ) as csv_file:
+
+        fieldnames = [
+            "status",
+            "relevance",
+            "score",
+            "title",
+            "organization",
+            "source",
+            "deadline",
+            "subject_areas",
+            "evidence",
+            "url",
+        ]
+
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=fieldnames,
+        )
+
+        writer.writeheader()
+
+        for result, job in matches:
+
+            status = (
+                "NEW"
+                if result.get("is_new")
+                else "SEEN"
+            )
+
+            writer.writerow(
+                {
+                    "status": status,
+                    "relevance": result["level"],
+                    "score": result["score"],
+                    "title": job.title,
+                    "organization": job.organization,
+                    "source": job.source,
+                    "deadline": job.deadline,
+                    "subject_areas": job.subject_areas,
+                    "evidence": "; ".join(
+                        result.get(
+                            "matches",
+                            [],
+                        )
+                    ),
+                    "url": job.url,
+                }
+            )
+
+    return report_path
+
+
+def make_sources(config):
+    """
+    Build the list of job sources to search. Each source describes
+    how to fetch its jobs, which candidate filter narrows the raw
+    listings before the expensive relevance scoring step, and an
+    optional per-job detail fetcher (only AcademicJobsOnline needs
+    a second request per job to load its deadline/subject areas).
+    """
+
+    faculty_filter = (
+        lambda job: is_faculty_candidate(job)
+        and not is_senior_only(job)
+    )
+
+    return [
+        {
+            "label": "AcademicJobsOnline",
+            "fetch": fetch_jobs,
+            "detail_fetcher": fetch_job_details,
+            "candidate_filter": faculty_filter,
+        },
+        {
+            "label": "iSchools Jobs",
+            "fetch": lambda: fetch_ischools_jobs(max_pages=5),
+            "detail_fetcher": None,
+            "candidate_filter": faculty_filter,
+        },
+        {
+            "label": "CRA Career Center",
+            "fetch": fetch_cra_jobs,
+            "detail_fetcher": None,
+            "candidate_filter": faculty_filter,
+        },
+        {
+            "label": "Design/Architecture Boards",
+            "fetch": fetch_design_jobs,
+            "detail_fetcher": None,
+            "candidate_filter": faculty_filter,
+        },
+        {
+            "label": "University-Specific Pages",
+            "fetch": fetch_university_jobs,
+            "detail_fetcher": None,
+            "candidate_filter": faculty_filter,
+        },
+        {
+            "label": "Industry Research Scientist",
+            "fetch": fetch_industry_jobs,
+            "detail_fetcher": None,
+            "candidate_filter": (
+                lambda job: is_research_scientist_candidate(
+                    job, config
+                )
+            ),
+        },
+    ]
+
+
+def process_source(source, config, matches):
+    """
+    Fetch, filter, score, and save jobs from a single source,
+    appending any relevant matches to the shared matches list.
+    """
+
+    print("\n" + "=" * 70)
+    print(f"Searching {source['label']}...")
+    print("=" * 70)
+
+    try:
+        jobs = source["fetch"]()
+    except Exception as error:
+        print(f"Could not fetch {source['label']}: {error}")
+        return
+
+    print(f"\nScanned {len(jobs)} {source['label']} jobs.")
+
+    candidates = [
+        job
+        for job in jobs
+        if source["candidate_filter"](job)
+    ]
+
+    print(
+        f"Found {len(candidates)} candidates "
+        f"before relevance filtering.\n"
+    )
+
+    for index, job in enumerate(candidates, start=1):
+
+        print(
+            f"Evaluating {source['label']} "
+            f"{index}/{len(candidates)}: "
+            f"{job.title[:60]}"
+        )
+
+        if source["detail_fetcher"]:
+
+            try:
+                source["detail_fetcher"](job)
+            except Exception as error:
+                print(f"  Could not read job: {error}")
+                continue
+
+            # Be reasonably polite to the website
+            time.sleep(0.15)
+
+        if not is_job_open(job):
+            print("  Skipping: deadline passed")
+            continue
+
+        result = score_detailed_job(job, config)
+
+        if result:
+
+            is_new = save_job(
+                job,
+                result["level"],
+                result["score"],
+            )
+
+            result["is_new"] = is_new
+
+            matches.append((result, job))
+
 
 def main():
 
@@ -442,203 +679,10 @@ def main():
 
     config = load_config()
 
-    print("Searching AcademicJobsOnline...")
-
-    jobs = fetch_jobs()
-
-    print(f"\nScanned {len(jobs)} jobs.")
-
-    faculty_jobs = [
-        job
-        for job in jobs
-        if is_faculty_candidate(job)
-        and not is_senior_only(job)
-    ]
-
-    print(
-        f"Found {len(faculty_jobs)} faculty candidates "
-        f"before relevance filtering.\n"
-    )
-
     matches = []
 
-    for index, job in enumerate(faculty_jobs, start=1):
-
-        print(
-            f"Reading {index}/{len(faculty_jobs)}: "
-            f"{job.title[:60]}"
-        )
-
-        try:
-            fetch_job_details(job)
-
-        except Exception as error:
-            print(f"  Could not read job: {error}")
-            continue
-
-        if not is_job_open(job):
-            continue
-
-        result = score_detailed_job(
-            job,
-            config,
-        )
-
-
-        if result:
-
-            is_new = save_job(
-                job,
-                result["level"],
-                result["score"],
-            )
-
-            result["is_new"] = is_new
-
-            matches.append(
-                (
-                    result,
-                    job,
-                )
-            )
-
-        # Be reasonably polite to the website
-        time.sleep(0.15)
-
-    # =========================================================
-    # iSchools
-    # =========================================================
-
-    print("\n" + "=" * 70)
-    print("Searching iSchools Jobs...")
-    print("=" * 70)
-
-    ischools_jobs = fetch_ischools_jobs(
-        max_pages=5,
-    )
-
-    print(
-        f"\nScanned {len(ischools_jobs)} "
-        f"iSchools jobs."
-    )
-
-    ischools_faculty_jobs = [
-        job
-        for job in ischools_jobs
-        if is_faculty_candidate(job)
-        and not is_senior_only(job)
-    ]
-
-    print(
-        f"Found {len(ischools_faculty_jobs)} "
-        f"iSchools faculty candidates "
-        f"before relevance filtering.\n"
-    )
-
-    for index, job in enumerate(
-        ischools_faculty_jobs,
-        start=1,
-    ):
-
-        print(
-            f"Evaluating iSchools "
-            f"{index}/{len(ischools_faculty_jobs)}: "
-            f"{job.title[:60]}"
-        )
-
-        # Details are already loaded by
-        # fetch_ischools_jobs(), so unlike AJO
-        # we do not call fetch_job_details() here.
-
-        if not is_job_open(job):
-            print("  Skipping: deadline passed")
-            continue
-
-        result = score_detailed_job(
-            job,
-            config,
-        )
-
-        if result:
-
-            is_new = save_job(
-                job,
-                result["level"],
-                result["score"],
-            )
-
-            result["is_new"] = is_new
-
-            matches.append(
-                (
-                    result,
-                    job,
-                )
-            )
-
-
-    # =========================================================
-    # CRA Career Center
-    # =========================================================
-
-    print("\n" + "=" * 70)
-    print("Searching CRA Career Center...")
-    print("=" * 70)
-
-    cra_jobs = fetch_cra_jobs()
-
-    print(
-        f"\nScanned {len(cra_jobs)} "
-        f"CRA jobs."
-    )
-
-    cra_faculty_jobs = [
-        job
-        for job in cra_jobs
-        if is_faculty_candidate(job)
-        and not is_senior_only(job)
-    ]
-
-    print(
-        f"Found {len(cra_faculty_jobs)} "
-        f"CRA faculty candidates "
-        f"before relevance filtering.\n"
-    )
-
-    for index, job in enumerate(
-        cra_faculty_jobs,
-        start=1,
-    ):
-
-        print(
-            f"Evaluating CRA "
-            f"{index}/{len(cra_faculty_jobs)}: "
-            f"{job.title[:60]}"
-        )
-
-        result = score_detailed_job(
-            job,
-            config,
-        )
-
-        if result:
-
-            is_new = save_job(
-                job,
-                result["level"],
-                result["score"],
-            )
-
-            result["is_new"] = is_new
-
-            matches.append(
-                (
-                    result,
-                    job,
-                )
-            )
-
-    
+    for source in make_sources(config):
+        process_source(source, config, matches)
 
     core_matches = [
     item
@@ -819,6 +863,18 @@ def main():
         print(
             f"URL: {job.url}"
         )
+
+    saved_report_path = export_results(
+        matches
+    )
+
+    print("\n" + "=" * 70)
+
+    print(
+        f"Report saved to: "
+        f"{saved_report_path}"
+    )
+
 
 
 if __name__ == "__main__":
