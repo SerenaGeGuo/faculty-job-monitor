@@ -22,11 +22,17 @@ HEADERS = {
 # is static, server-rendered HTML (confirmed reachable without a
 # headless browser). "mode" selects how job links are recognized:
 #
-#   "peopleadmin" - links whose href contains "/postings/" are treated
-#                   as individual job postings (PeopleAdmin/Interfolio
-#                   style ATS).
-#   "generic"     - any link whose visible text looks like a job
-#                   posting title (see _looks_like_job_title below).
+#   "peopleadmin"    - links whose href contains "/postings/" are
+#                       treated as individual job postings
+#                       (PeopleAdmin/Interfolio style ATS).
+#   "generic"        - any link whose visible text looks like a job
+#                       posting title (see _looks_like_job_title
+#                       below).
+#   "table_rows"     - postings listed as plain-text table rows with
+#                       no per-row link (e.g. Georgia Tech CoC).
+#   "heading_blocks" - postings announced as a heading (h1-h5) with
+#                       no link at all (e.g. UW HCDE, which lists
+#                       "Assistant Professor of ..." as a bare <h2>).
 #
 # Schools whose postings are fully JS-rendered (CMU/Workday, Stanford,
 # UW Allen School/Interfolio SPA, RISD/Workday, ArtCenter/Cornerstone,
@@ -117,11 +123,29 @@ UNIVERSITY_SOURCES = [
         "url": "https://ischool.uw.edu/about/jobs/faculty",
         "mode": "generic",
     },
+    {
+        "name": "UW Human Centered Design & Engineering",
+        "url": "https://www.hcde.washington.edu/employment",
+        "mode": "heading_blocks",
+    },
+    {
+        "name": "UC San Diego Design Lab",
+        "url": "https://designlab.ucsd.edu/jobs/faculty-and-staff/",
+        "mode": "generic",
+    },
 ]
 
+# NOTE: bare "faculty" is deliberately excluded - it matches too
+# many nav/directory links ("Faculty", "Faculty & Staff", "Faculty
+# & Research Highlights"). Actual posting titles reliably use one
+# of the more specific phrases below instead.
 JOB_TITLE_KEYWORDS = [
     "professor",
-    "faculty",
+    "faculty position",
+    "faculty positions",
+    "faculty opening",
+    "faculty openings",
+    "faculty search",
     "tenure",
     "lecturer",
     "instructor",
@@ -332,6 +356,49 @@ def _extract_table_row_jobs(
     return jobs
 
 
+def _extract_heading_block_jobs(
+    soup: BeautifulSoup,
+    base_url: str,
+    source_name: str,
+) -> List[Job]:
+    """
+    Some department pages (e.g. UW HCDE) announce a posting as a
+    bare heading with no surrounding link. There is no individual
+    posting URL to give in that case, so every match points back
+    at the listing page itself.
+    """
+
+    jobs: List[Job] = []
+    seen_titles = set()
+
+    for heading in soup.find_all(["h1", "h2", "h3", "h4", "h5"]):
+
+        title = heading.get_text(" ", strip=True)
+
+        if not _looks_like_job_title(title):
+            continue
+
+        if title in seen_titles:
+            continue
+
+        seen_titles.add(title)
+
+        jobs.append(
+            Job(
+                title=title,
+                organization=source_name,
+                url=base_url,
+                subject_areas="",
+                description="",
+                position_type="",
+                deadline="",
+                source=f"University: {source_name}",
+            )
+        )
+
+    return jobs
+
+
 def fetch_source_jobs(
     source: dict,
     timeout: int = 30,
@@ -356,6 +423,11 @@ def fetch_source_jobs(
 
     if source["mode"] == "table_rows":
         return _extract_table_row_jobs(
+            soup, source["url"], source["name"]
+        )
+
+    if source["mode"] == "heading_blocks":
+        return _extract_heading_block_jobs(
             soup, source["url"], source["name"]
         )
 
