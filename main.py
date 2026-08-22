@@ -42,6 +42,11 @@ from job_monitor.database.storage import (
     save_job,
 )
 
+from job_monitor.notify.email_digest import (
+    build_digest_text,
+    send_digest_email,
+)
+
 def load_config():
     with open("config/search.yaml", "r", encoding="utf-8") as file:
         return yaml.safe_load(file)
@@ -874,6 +879,9 @@ def main():
         f"Report saved to: "
         f"{saved_report_path}"
     )
+
+    digest_text = build_digest_text(matches)
+    send_digest_email(digest_text)
 
 
 
