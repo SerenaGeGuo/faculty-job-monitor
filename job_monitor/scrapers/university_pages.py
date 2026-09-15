@@ -133,6 +133,20 @@ UNIVERSITY_SOURCES = [
         "url": "https://designlab.ucsd.edu/jobs/faculty-and-staff/",
         "mode": "generic",
     },
+    # UNC-Chapel Hill's own department sites (cs.unc.edu, sils.unc.edu)
+    # return a bot-blocked 403, but their PeopleAdmin portal is open.
+    {
+        "name": "UNC-Chapel Hill (PeopleAdmin)",
+        "url": "https://unc.peopleadmin.com/postings/search",
+        "mode": "peopleadmin",
+    },
+    # UT Austin has no confirmed scrapable source: the iSchool jobs
+    # page (ischool.utexas.edu/about/jobs) is bot-blocked, the CS
+    # "recruiting" page has no individual listings (just a standing
+    # statement), and their Workday instance (utaustin.wd1.myworkday
+    # jobs.com/UTstaff) only carries staff/postdoc roles, not
+    # tenure-track faculty. Check manually until a working source is
+    # found.
 ]
 
 # NOTE: bare "faculty" is deliberately excluded - it matches too
