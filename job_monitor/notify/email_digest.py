@@ -42,12 +42,31 @@ def _format_job_line(result, job) -> str:
     )
 
 
+def _format_saved_job_line(row: dict) -> str:
+
+    deadline = (row.get("deadline") or "").strip() or "no listed deadline"
+    first_seen = (row.get("first_seen") or "")[:10]
+
+    return (
+        f"  {row['title']}\n"
+        f"    Organization: {row['organization']}\n"
+        f"    Source: {row['source']}\n"
+        f"    Deadline: {deadline}\n"
+        f"    First sent: {first_seen}\n"
+        f"    URL: {row['url']}\n"
+    )
+
+
 def build_digest_text(
     matches: List[Tuple[dict, object]],
+    previously_sent: List[dict] = None,
 ) -> str:
     """
     Build a plain-text weekly digest, prioritizing NEW postings but
-    including full counts for context.
+    including full counts for context. previously_sent (from
+    storage.get_all_jobs(), with this run's new postings already
+    excluded) is listed separately as a "already sent" reminder so
+    older postings don't get forgotten between runs.
     """
 
     new_matches = [item for item in matches if item[0]["is_new"]]
@@ -100,6 +119,37 @@ def build_digest_text(
 
         for result, job in group:
             lines.append(_format_job_line(result, job))
+
+    if previously_sent:
+
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append(
+            f"ALREADY SENT IN PAST RUNS ({len(previously_sent)}) "
+            f"- for reference, not new"
+        )
+        lines.append("=" * 60)
+
+        for level, label in (
+            ("CORE", "PREVIOUSLY SENT - CORE"),
+            ("BROAD", "PREVIOUSLY SENT - BROAD"),
+            ("ADJACENT", "PREVIOUSLY SENT - ADJACENT"),
+        ):
+
+            level_rows = [
+                row
+                for row in previously_sent
+                if row["relevance_level"] == level
+            ]
+
+            if not level_rows:
+                continue
+
+            lines.append("")
+            lines.append(f"--- {label} ({len(level_rows)}) ---")
+
+            for row in level_rows:
+                lines.append(_format_saved_job_line(row))
 
     return "\n".join(lines)
 

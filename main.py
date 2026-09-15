@@ -1,10 +1,20 @@
 import csv
+import sys
 import yaml
 import time
 import re
 
 from pathlib import Path
 from datetime import datetime
+
+# Force UTF-8 stdout/stderr regardless of the console's codepage.
+# Without this, job titles containing characters outside cp1252
+# (em-dashes, accented names, etc.) crash the whole scan when run
+# non-interactively (e.g. under Task Scheduler) instead of just
+# printing normally.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from job_monitor.scrapers.academic_jobs_online import (
     fetch_jobs,
@@ -40,6 +50,7 @@ from job_monitor.scrapers.industry_sources import (
 from job_monitor.database.storage import (
     init_db,
     save_job,
+    get_all_jobs,
 )
 
 from job_monitor.notify.email_digest import (
@@ -880,7 +891,17 @@ def main():
         f"{saved_report_path}"
     )
 
-    digest_text = build_digest_text(matches)
+    new_urls = {
+        job.url for result, job in matches if result["is_new"]
+    }
+
+    previously_sent = [
+        row
+        for row in get_all_jobs()
+        if row["url"] not in new_urls
+    ]
+
+    digest_text = build_digest_text(matches, previously_sent)
     send_digest_email(digest_text)
 
 

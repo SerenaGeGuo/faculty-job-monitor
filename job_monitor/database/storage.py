@@ -133,3 +133,50 @@ def save_job(job, relevance_level, relevance_score):
     conn.close()
 
     return is_new
+
+
+def get_all_jobs():
+    """
+    Return every job ever saved (i.e. every posting that has matched
+    CORE/BROAD/ADJACENT relevance at some point), ordered by
+    relevance level then most-recently-first-seen. Used to remind
+    the user what was already sent in past digests.
+    """
+
+    conn = sqlite3.connect(DB_PATH)
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT url, title, organization, source, deadline,
+               relevance_level, relevance_score, first_seen
+        FROM jobs
+        ORDER BY
+            CASE relevance_level
+                WHEN 'CORE' THEN 0
+                WHEN 'BROAD' THEN 1
+                WHEN 'ADJACENT' THEN 2
+                ELSE 3
+            END,
+            first_seen DESC
+        """
+    )
+
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return [
+        {
+            "url": row[0],
+            "title": row[1],
+            "organization": row[2],
+            "source": row[3],
+            "deadline": row[4],
+            "relevance_level": row[5],
+            "relevance_score": row[6],
+            "first_seen": row[7],
+        }
+        for row in rows
+    ]
