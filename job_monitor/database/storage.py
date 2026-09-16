@@ -7,7 +7,8 @@ DB_PATH = "jobs.db"
 
 def init_db():
     """
-    Create the jobs database if it does not already exist.
+    Create the jobs database if it does not already exist, and add
+    any columns introduced after the table was first created.
     """
 
     conn = sqlite3.connect(DB_PATH)
@@ -32,6 +33,12 @@ def init_db():
         )
         """
     )
+
+    cursor.execute("PRAGMA table_info(jobs)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+
+    if "description" not in existing_columns:
+        cursor.execute("ALTER TABLE jobs ADD COLUMN description TEXT")
 
     conn.commit()
     conn.close()
@@ -74,6 +81,7 @@ def save_job(job, relevance_level, relevance_score):
                 deadline = ?,
                 relevance_level = ?,
                 relevance_score = ?,
+                description = ?,
                 last_seen = ?
             WHERE url = ?
             """,
@@ -86,6 +94,7 @@ def save_job(job, relevance_level, relevance_score):
                 job.deadline,
                 relevance_level,
                 relevance_score,
+                job.description,
                 now,
                 job.url,
             ),
@@ -107,10 +116,11 @@ def save_job(job, relevance_level, relevance_score):
                 deadline,
                 relevance_level,
                 relevance_score,
+                description,
                 first_seen,
                 last_seen
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.url,
@@ -122,6 +132,7 @@ def save_job(job, relevance_level, relevance_score):
                 job.deadline,
                 relevance_level,
                 relevance_score,
+                job.description,
                 now,
                 now,
             ),
@@ -140,7 +151,8 @@ def get_all_jobs():
     Return every job ever saved (i.e. every posting that has matched
     CORE/BROAD/ADJACENT relevance at some point), ordered by
     relevance level then most-recently-first-seen. Used to remind
-    the user what was already sent in past digests.
+    the user what was already sent in past digests, and to build the
+    full Excel export.
     """
 
     conn = sqlite3.connect(DB_PATH)
@@ -150,7 +162,8 @@ def get_all_jobs():
     cursor.execute(
         """
         SELECT url, title, organization, source, deadline,
-               relevance_level, relevance_score, first_seen
+               relevance_level, relevance_score, first_seen,
+               description
         FROM jobs
         ORDER BY
             CASE relevance_level
@@ -177,6 +190,7 @@ def get_all_jobs():
             "relevance_level": row[5],
             "relevance_score": row[6],
             "first_seen": row[7],
+            "description": row[8],
         }
         for row in rows
     ]
